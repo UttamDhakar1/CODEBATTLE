@@ -2,6 +2,9 @@ const express = require("express");
 const cors = require("cors");
 // CORS -> CORS is a browswer security mechanism that controls
 //  which frontend application is allowed to send backen API
+const User = require("./models/User.js");
+require("dotenv").config();
+
 
 const app = express();
 app.use(cors());
@@ -21,6 +24,8 @@ const startServer = async() => {
     try{
         await sequelize.authenticate();
         console.log("MySQL database connected");
+        await sequelize.sync();
+        console.log("Database Table Sync!!!")
         app.listen(PORT, () =>{
             console.log(`CODEBATTLE is running on port ${PORT}`);
         });
