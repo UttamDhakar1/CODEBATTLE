@@ -25,8 +25,21 @@ const User = sequelize.define(
         },
         codeforcesHandle: {
             type: DataTypes.STRING(50),
-            allowNull: true,
+            allowNull: false,
             unique: true
+        },
+        codeforcesVerified: {
+            type: DataTypes.BOOLEAN,
+            allowNULL: false,
+            defaultValue: false
+        },
+        verificationCode: {
+            type: DataTypes.STRING(50),
+            allowNULL: true
+        },
+        verificationExpiresAt: {
+            type: DataTypes.DATE,
+            allowNull: true
         },
         codebattleRating:{
             type: DataTypes.INTEGER,

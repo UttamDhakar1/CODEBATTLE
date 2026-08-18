@@ -1,13 +1,14 @@
 const bcrypt = require("bcrypt");
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
-
+const crypto = require("crypto");
+// Use for randomly generate code
 const register = async(req, res) => {
     try {
-        const {username, email, password} = req.body;
-        if(!username || !email || !password){
+        const {username, email, password, codeforcesHandle} = req.body;
+        if(!username || !email || !password || !codeforcesHandle){
             return res.status(400).json({
-                message: "Username, email and password are required"
+                message: "Username, email, password and CodeforcesHandle are required"
             });
         }
         const existingUsername = await User.findOne({
@@ -27,14 +28,23 @@ const register = async(req, res) => {
                 message: "Email already exists"
             });
         }
-        // const existedCoder = await User.findOne({
-        //     where : {codeforcesHandle}
-        // });
-        // if(existedCoder){
-        //     return res.status(409).json({
-        //         message: "Codeforces account already existed"
-        //     })
-        // }
+        const existedCoder = await User.findOne({
+            where : {codeforcesHandle}
+        });
+        if(existedCoder){
+            return res.status(409).json({
+                message: "Codeforces account already existed"
+            })
+        }
+        const verificationCode = `CB_VERIFY-${crypto
+            .randomBytes(4)
+            .toString("hex")
+            .toUpperCase()}`;
+
+        const verificationExpiresAt = new Date(
+            Date.now() + 10 * 60 * 1000
+        );
+        // console.log("varification Code: ", verificationCode);
         // Bcrypt password
         const hashPassword = await bcrypt.hash(password, 10);
         
@@ -42,7 +52,10 @@ const register = async(req, res) => {
             // id,
             username,
             email,
-            password: hashPassword
+            password: hashPassword,
+            codeforcesHandle,
+            verificationCode,
+            verificationExpiresAt
         });
 
         return res.status(201).json({
@@ -51,7 +64,7 @@ const register = async(req, res) => {
                 id: user.id,
                 username: user.username,
                 email: user.email,
-                // codeforces: user.codeforcesHandle,
+                codeforces: user.codeforcesHandle,
                 codebattleRating: user.codebattleRating
             }
         })
@@ -64,6 +77,75 @@ const register = async(req, res) => {
             message: "Internal server Error"
         });
     }
+};
+
+const verifyCodeforces = async(req, res) => {
+    try{
+        const userId = req.user.id;
+        // console.log("Authenticated user ID:", req.user.id);
+        const {verificationCode} = req.body;
+        if(!verificationCode){
+            return res.status(400).json({
+                message: "verification code is required"
+            });
+        }
+        const user = await User.findByPk(userId);
+        if(!user){
+            return res.status(404).json({
+                message: "user not found"
+            });
+        }
+        if(user.codeforcesVerified) {
+            return res.status(400).json({
+                message: "Codeforces account is already verified"
+            });
+        }
+        // console.log("Authenticated User ID:", userId);
+        // console.log("Database Verification Code:", user.verificationCode);
+        // console.log("Received Verification Code:", verificationCode);
+        if(user.verificationCode !== verificationCode){
+            return res.status(400).json({
+                message: "Invalid verification code"
+            });
+        }
+        if(
+            !user.verificationExpiresAt || new Date() > user.verificationExpiresAt
+        ) {
+            return res.status(400).json({
+                message: "verification code has expired"
+            });
+        }
+        const response = await fetch(
+            `https://codeforces.com/api/user.info?handles=${encodeURIComponent(user.codeforcesHandle)}`
+        );
+        const data = await response.json();
+        if(data.status !== "OK"){
+            return res.status(400).json({
+                message: "Unable to find Codeforces account"
+            });
+        }
+        const codeforcesUser = data.result[0];
+        if(codeforcesUser.firstName !== user.verificationCode){
+            return res.status(400).json({
+                message: "Verification code not found in Codeforces Profile"
+            });
+        }
+        user.codeforcesVerified = true;
+        user.verificationCode = null;
+        user.verificationExpiresAt = null;
+        await user.save();
+        return res.status(200).json({
+            message: "Codeforces account verify Successfully"
+        });
+
+    }
+    catch (error){
+        console.log("Codeforces verification failed", error);
+        return res.status(500).json({
+            message: "Internal server error"
+        });
+    }
+
 };
 
 const login = async(req, res) => {
@@ -125,5 +207,6 @@ const login = async(req, res) => {
 
 module.exports ={
     register,
-    login
+    login,
+    verifyCodeforces
 }
