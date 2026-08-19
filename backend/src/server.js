@@ -18,6 +18,8 @@ app.get("/api/auth/me", authenticate, (req, res) => {
 });
 const sequelize = require("./config/database.js");
 const Battle = require("./models/Battle");
+const BattleParticipant = require("./models/BattleParticipant.js");
+
 const PORT =  process.env.PORT || 5001;
 
 app.get("/", (req, res) => {
