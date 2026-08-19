@@ -205,8 +205,38 @@ const login = async(req, res) => {
 
 }
 
+const getMe = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        const user = await User.findByPk(userId);
+        if(!user){
+            return res.status(404).json({
+                message: "User not found"
+            });
+        }
+        return res.status(200).json({
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                codeforcesHandle: user.codeforcesHandle,
+                codeforcesVerified: user.codeforcesVerified,
+                codebattleRating: user.codebattleRating
+            }
+        });
+
+    } catch (error) {
+        console.log("Get user error: ", error);
+        return res.status(500).json({
+            message: "Internal Server Error"
+        });
+    }
+};
+
 module.exports ={
     register,
     login,
-    verifyCodeforces
+    verifyCodeforces,
+    getMe
 }
