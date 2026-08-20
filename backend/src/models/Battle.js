@@ -16,10 +16,21 @@ const Battle = sequelize.define("Battle", {
         type: DataTypes.INTEGER,
         allowNull: false
     },
+    minPlayers:{
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 2
+    },
+    maxPlayers: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 2
+    },
     status: {
         type: DataTypes.ENUM(
             "WAITING",
             "RUNNING",
+            "COUNTDOWN",
             "FINISHED"
         ),
         allowNull: false,
@@ -41,10 +52,19 @@ const Battle = sequelize.define("Battle", {
         type: DataTypes.INTEGER,
         allowNull: false
     },
+    startCountdownAt:{
+        type: DataTypes.DATE,
+        allowNull: true,
+    },
+    countdownEndAt:{
+        type: DataTypes.DATE,
+        allowNull: true
+    },
     startTime: {
         type: DataTypes.DATE,
         allowNull: true,
     },
+    
     endTime: {
         type: DataTypes.DATE,
         allowNull: true

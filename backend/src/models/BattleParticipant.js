@@ -10,12 +10,20 @@ const BattleParticipant = sequelize.define("BattleParticipant", {
 
     battleId: {
         type: DataTypes.INTEGER,
-        allowNull: false
+        allowNull: false,
+        references: {
+            model: "Battles",
+            key: "id"
+        }
     },
 
     userId: {
         type: DataTypes.INTEGER,
-        allowNull: false
+        allowNull: false,
+        reference: {
+            model: "users",
+            kwy: "id"
+        }
     },
 
     isActive: {
@@ -60,7 +68,7 @@ const BattleParticipant = sequelize.define("BattleParticipant", {
         ),
         allowNull: true
     },
-    
+
     oldRating: {
         type: DataTypes.INTEGER,
         allowNull: true
