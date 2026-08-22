@@ -48,6 +48,10 @@ const Battle = sequelize.define("Battle", {
         type: DataTypes.JSON,
         allowNull: true
     },
+    currentProblemOrder: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
     maxDuration: {
         type: DataTypes.INTEGER,
         allowNull: false

@@ -21,6 +21,7 @@ const startBattleIfReady = async (battleId) => {
     battle.status = "RUNNING";
     battle.startTime = startTime;
     battle.endTime = endTime;
+    battle.currentProblemOrder = 1;
 
     await battle.save();
     return battle;

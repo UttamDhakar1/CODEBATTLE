@@ -7,7 +7,8 @@ require("dotenv").config();
 const authRoutes = require("./routes/authRoutes.js");
 const battleRoutes = require("./routes/battleRoutes.js");
 const authenticate = require("./middleware/authMiddleware.js");
-const { startCountdownBattles } = require("./services/battleScheduler");
+const { startCountdownBattles, checkRunningBattles } = require("./services/battleScheduler");
+
 
 const app = express();
 app.use(cors());
@@ -24,13 +25,18 @@ const sequelize = require("./config/database.js");
 const Battle = require("./models/Battle");
 const BattleParticipant = require("./models/BattleParticipant.js");
 
-require("./models/associations");
+require("./models/associations.js");
 
 const PORT =  process.env.PORT || 5001;
 
 setInterval(() => {
     startCountdownBattles();
+    // await checkRunningBattles();
 }, 1000);
+
+setInterval(() => {
+    checkRunningBattles(); 
+}, 5000);
 
 app.get("/", (req, res) => {
     res.json({

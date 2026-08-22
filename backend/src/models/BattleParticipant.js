@@ -82,7 +82,17 @@ const BattleParticipant = sequelize.define("BattleParticipant", {
     newRating: {
         type: DataTypes.INTEGER,
         allowNull: true
-    }
+    },
+
+    lastCheckedSubmissionId: {
+        type: DataTypes.BIGINT,
+        allowNull: true
+    },
+
+    lastCheckedSubmissionTime: {
+        type: DataTypes.BIGINT,
+        allowNull: true
+    },
 });
 
 module.exports = BattleParticipant;

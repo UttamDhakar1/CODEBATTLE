@@ -3,6 +3,11 @@ const Battle = require("../models/Battle");
 const BattleParticipant = require("../models/BattleParticipant");
 const crypto = require("crypto");
 const { startBattleIfReady } = require("../services/battleService");
+const { syncCodeforcesProblems } = require("../services/codeforcesService")
+const { assignProblemsToBattle } = require("../services/battleProblemService.js");
+const BattleProblem = require("../models/BattleProblem");
+const Problem = require("../models/Problem");
+const { getSubmissionsForBattle, getUserSubmissions } = require("../services/codeforcesSubmissionService");
 
 const generateRoomCode = () => {
     return crypto.randomBytes(4)
@@ -251,6 +256,8 @@ const startBattle = async (req, res) => {
             });
         }
 
+        const battleProblems = await assignProblemsToBattle(battle);
+
         const startCountdownAt = new Date();
 
         const countdownEndAt = new Date(
@@ -320,9 +327,269 @@ const getBattle = async (req, res) => {
     }
 }
 
+const syncProblems = async (req, res) => {
+    try {
+        const result = await syncCodeforcesProblems();
+
+        return res.status(200).json({
+            message: "Codeforces problems synchronized successfully"
+        });
+
+    } catch (error) {
+        console.error("Problem synchronization error: ", error);
+
+        return res.status(500).json({
+            message: "failed to Synchronize Codeforces problems"
+        });
+    }
+};
+
+const assignBattleProblems = async (req, res) => {
+    try {
+        const { battleId } = req.params;
+
+        const battle = await await Battle.findByPk(battleId);
+
+        if(!battle){
+            return res.status(404).json({
+                message: "Battle not found"
+            });
+        }
+
+        const battleProblems = await assignProblemsToBattle(battle);
+
+        return res.status(200).json({
+            message: "Problem assigned successfully",
+            battleProblems
+        });
+
+    } catch (error) {
+        console.log("Assign problems error:", error);
+
+        return res.status(500).json({
+            message: error.message
+        })
+    }
+}
+
+const getCurrentProblem = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { battleId } = req.params;
+
+        const battle = await Battle.findByPk(battleId);
+
+        if (!battle) {
+            return res.status(404).json({
+                message: "Battle not found"
+            });
+        }
+
+        const participant = await BattleParticipant.findOne({
+            where: {
+                battleId: battle.id,
+                userId
+            }
+        });
+
+        if (!participant) {
+            return res.status(403).json({
+                message: "You are not a participant of this battle"
+            });
+        }
+
+        if (battle.status !== "RUNNING") {
+            return res.status(400).json({
+                message: "Battle is not running"
+            });
+        }
+
+        const battleProblem = await BattleProblem.findOne({
+            where: {
+                battleId: battle.id,
+                problemOrder: battle.currentProblemOrder
+            },
+            include: {
+                model: Problem,
+                as: "problem"
+            }
+        });
+
+        if (!battleProblem) {
+            return res.status(404).json({
+                message: "Current problem not found"
+            });
+        }
+
+        return res.status(200).json({
+            problem: {
+                order: battleProblem.problemOrder,
+                id: battleProblem.problem.id,
+                contestId: battleProblem.problem.contestId,
+                problemIndex: battleProblem.problem.problemIndex,
+                name: battleProblem.problem.name,
+                rating: battleProblem.problem.rating,
+                topics: battleProblem.problem.topics,
+                url: battleProblem.problem.url
+            }
+        });
+
+    } catch (error) {
+        console.error("Get current problem error:", error);
+
+        return res.status(500).json({
+            message: "Internal server error"
+        });
+    }
+};
+
+const testCodeforcesSubmissions = async (req, res) => {
+    try {
+        const {
+            handle,
+            contestId,
+            problemIndex,
+            battleStartTime,
+            battleEndTime,
+            lastCheckedSubmissionId
+        } = req.body;
+
+        if (
+            !handle ||
+            !contestId ||
+            !problemIndex ||
+            !battleStartTime ||
+            !battleEndTime
+        ) {
+            return res.status(400).json({
+                message: "Missing required fields"
+            });
+        }
+
+        const submissions = await getSubmissionsForBattle({
+            handle,
+            contestId: Number(contestId),
+            problemIndex,
+            battleStartTime,
+            battleEndTime,
+            lastCheckedSubmissionId:
+                Number(lastCheckedSubmissionId) || 0
+        });
+
+        return res.status(200).json({
+            submissions
+        });
+
+    } catch (error) {
+        console.error(
+            "Codeforces submission check error:",
+            error.response?.data || error.message
+        );
+
+        return res.status(500).json({
+            message: "Failed to check Codeforces submissions"
+        });
+    }
+};
+
+const getBattleResult = async (req, res) => {
+    try {
+        const { battleId } = req.params;
+
+        const battle = await Battle.findByPk(battleId);
+
+        if (!battle) {
+            return res.status(404).json({
+                message: "Battle not found"
+            });
+        }
+
+        if (battle.status !== "FINISHED") {
+            return res.status(400).json({
+                message: "Battle is not finished yet"
+            });
+        }
+
+        const participants = await BattleParticipant.findAll({
+            where: {
+                battleId: battle.id
+            },
+            order: [["rank", "ASC"]]
+        });
+
+        if(!participant) {
+            return res.status(403).json({
+                message: "You are not a participant of this battle"
+            });
+        };
+
+        return res.status(200).json({
+            battleId: battle.id,
+            status: battle.status,
+            winnerId: battle.winnerId,
+            participants: participants.map(p => ({
+                userId: p.userId,
+                acceptedCount: p.acceptedCount,
+                totalPenalty: p.totalPenalty,
+                rank: p.rank,
+                result: p.result
+            }))
+        });
+
+    } catch (error) {
+        console.error("Get battle result error:", error);
+
+        return res.status(500).json({
+            message: "Internal Server Error"
+        });
+    }
+};
+
+const getMyBattleHistory = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        const participations = await BattleParticipant.findAll({
+            where: {
+                userId
+            },
+            include: {
+                model: Battle,
+                as: "battle"
+            },
+            order: [["createdAt", "DESC"]]
+        });
+
+        return res.status(200).json({
+            battles: participations.map(p => ({
+                battleId: p.battleId,
+                status: p.battle.status,
+                acceptedCount: p.acceptedCount,
+                totalPenalty: p.totalPenalty,
+                rank: p.rank,
+                result: p.result,
+                joinedAt: p.joinedAt
+            }))
+        });
+
+    } catch (error) {
+        console.error("Get battle history error:", error);
+
+        return res.status(500).json({
+            message: "Internal Server Error"
+        });
+    }
+};
+
 module.exports = {
     createBattle,
     joinBattle,
     startBattle,
-    getBattle
-}
+    getBattle,
+    syncProblems,
+    assignBattleProblems,
+    getCurrentProblem,
+    testCodeforcesSubmissions,
+    getBattleResult,
+    getMyBattleHistory
+};
