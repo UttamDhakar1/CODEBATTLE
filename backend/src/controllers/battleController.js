@@ -301,6 +301,19 @@ const getBattle = async (req, res) => {
                 message: "Battle not found"
             });
         }
+
+        const participant = await BattleParticipant.findOne({
+            where: {
+                battleId: battle.id,
+                userId: req.user.id
+            }
+        });
+        if(!participant){
+            return res.status(403).json({
+                message: "You are not a participant of this battle"
+            });
+        };
+        
         return res.status(200).json({
             battle: {
                 id: battle.id,
@@ -388,7 +401,7 @@ const getCurrentProblem = async (req, res) => {
         const participant = await BattleParticipant.findOne({
             where: {
                 battleId: battle.id,
-                userId
+                userId: req.user.id
             }
         });
 

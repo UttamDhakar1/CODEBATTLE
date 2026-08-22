@@ -36,7 +36,7 @@ setInterval(() => {
 
 setInterval(() => {
     checkRunningBattles(); 
-}, 5000);
+}, 60 * 1000);
 
 app.get("/", (req, res) => {
     res.json({

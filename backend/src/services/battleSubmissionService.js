@@ -7,11 +7,10 @@ const { calculateBattleResult } = require("./battleResultService");
 
 const PENALTY_MINUTES = 10;
 
-const processBattleParticipantSubmissions = async (
-    battle,
-    participant,
-    codeforcesHandle
-) => {
+const processBattleParticipantSubmissions = async (battle,participant,codeforcesHandle ) => {
+    
+    if(battle.status !== "RUNNING") return;
+    
     const battleProblem = await BattleProblem.findOne({
         where: {
             battleId: battle.id,

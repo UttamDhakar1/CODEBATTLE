@@ -9,10 +9,10 @@ router.post("/join", authenticate, joinBattle);
 router.post("/:battleId/start", authenticate, startBattle);
 router.post("/sync-problems", authenticate, syncProblems);
 router.post("/:battleId/assign-problems", authenticate, assignBattleProblems);
-router.get("/:battleId/current-problem", authenticate, getCurrentProblem);
 router.post("/test-codeforces-submissions", authenticate, testCodeforcesSubmissions);
-router.get("./:battleId/result", authenticate, getBattleResult);
 router.get("/history", authenticate, getMyBattleHistory);
+router.get("./:battleId/result", authenticate, getBattleResult);
+router.get("/:battleId/current-problem", authenticate, getCurrentProblem);
 router.get("/:battleId", authenticate, getBattle);
 
 module.exports = router;

@@ -52,19 +52,26 @@ const checkRunningBattles = async () => {
 
             for (const participant of participants) {
 
-                // Replace this with however you store
-                // the user's Codeforces handle.
-                const handle = participant.user?.codeforcesHandle;
-
-                if (!handle) {
-                    continue;
+                try {
+                    // Replace this with however you store
+                    // the user's Codeforces handle.
+                    const handle = participant.user?.codeforcesHandle;
+    
+                    if (!handle) {
+                        continue;
+                    }
+    
+                    await processBattleParticipantSubmissions(
+                        battle,
+                        participant,
+                        handle
+                    );
+                } catch (error) {
+                    console.error(
+                        `Submission check failed for user ${participant.userId}: `,
+                        error.message
+                    );
                 }
-
-                await processBattleParticipantSubmissions(
-                    battle,
-                    participant,
-                    handle
-                );
             }
         }
 
