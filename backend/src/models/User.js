@@ -41,10 +41,10 @@ const User = sequelize.define(
             type: DataTypes.DATE,
             allowNull: true
         },
-        codebattleRating:{
+        codebattleRating: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            defaultValue: 5000
+            defaultValue: 800
         },
         isActive:{
             type: DataTypes.BOOLEAN,

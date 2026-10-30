@@ -8,7 +8,8 @@ const { assignProblemsToBattle } = require("../services/battleProblemService.js"
 const BattleProblem = require("../models/BattleProblem");
 const Problem = require("../models/Problem");
 const { getSubmissionsForBattle, getUserSubmissions } = require("../services/codeforcesSubmissionService");
-
+const BattleSubmission = require("../models/BattleSubmission");
+const User = require("../models/User");
 const generateRoomCode = () => {
     return crypto.randomBytes(4)
         .toString("hex")
@@ -281,11 +282,12 @@ const startBattle = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Start Battle error");
+    console.error("Start Battle error:", error);
 
-        return res.status(500).json({
-            message: "Internal server error"
-        });
+    return res.status(500).json({
+        message: "Internal server error",
+        error: error.message
+    });
     }
 }
 
@@ -328,7 +330,8 @@ const getBattle = async (req, res) => {
                 startCountdownAt: battle.startCountdownAt,
                 countdownEndAt: battle.countdownEndAt,
                 startTime: battle.startTime,
-                endTime: battle.endTime
+                endTime: battle.endTime,
+                isHost: Number(battle.hostId) === Number(req.user.id),
             }
         });
     
@@ -340,22 +343,29 @@ const getBattle = async (req, res) => {
     }
 }
 
+
 const syncProblems = async (req, res) => {
     try {
+        console.log("Starting Codeforces problem synchronization...");
+
         const result = await syncCodeforcesProblems();
 
-        return res.status(200).json({
-            message: "Codeforces problems synchronized successfully"
-        });
+        console.log("Codeforces synchronization completed:", result);
 
+        return res.status(200).json({
+            message: "Codeforces problems synchronized successfully",
+            stats: result,
+        });
     } catch (error) {
-        console.error("Problem synchronization error: ", error);
+        console.error("Problem synchronization error:", error);
 
         return res.status(500).json({
-            message: "failed to Synchronize Codeforces problems"
+            message: "Failed to synchronize Codeforces problems",
+            error: error.message,
         });
     }
 };
+
 
 const assignBattleProblems = async (req, res) => {
     try {
@@ -366,6 +376,12 @@ const assignBattleProblems = async (req, res) => {
         if(!battle){
             return res.status(404).json({
                 message: "Battle not found"
+            });
+        }
+        
+        if (battle.hostId !== req.user.id) {
+            return res.status(403).json({
+                message: "Only the host can assign battle problems"
             });
         }
 
@@ -458,41 +474,72 @@ const getCurrentProblem = async (req, res) => {
 
 const testCodeforcesSubmissions = async (req, res) => {
     try {
-        const {
-            handle,
-            contestId,
-            problemIndex,
-            battleStartTime,
-            battleEndTime,
-            lastCheckedSubmissionId
-        } = req.body;
+        const { battleId, lastCheckedSubmissionId } = req.body;
 
-        if (
-            !handle ||
-            !contestId ||
-            !problemIndex ||
-            !battleStartTime ||
-            !battleEndTime
-        ) {
+        if (!battleId) {
             return res.status(400).json({
-                message: "Missing required fields"
+                message: "Battle ID is required"
+            });
+        }
+
+        const battle = await Battle.findByPk(battleId);
+
+        if (!battle) {
+            return res.status(404).json({
+                message: "Battle not found"
+            });
+        }
+
+        // Only a participant may check submissions for this battle.
+        const participant = await BattleParticipant.findOne({
+            where: {
+                battleId: battle.id,
+                userId: req.user.id
+            }
+        });
+
+        if (!participant) {
+            return res.status(403).json({
+                message: "You are not a participant of this battle"
+            });
+        }
+
+        if (!battle.startTime || !battle.endTime) {
+            return res.status(400).json({
+                message: "Battle start or end time is not available"
+            });
+        }
+
+        // Use the verified Codeforces handle belonging to the
+        // authenticated participant, not a handle supplied by the client.
+        const User = require("../models/User");
+        const user = await User.findByPk(req.user.id);
+
+        if (!user || !user.codeforcesVerified || !user.codeforcesHandle) {
+            return res.status(403).json({
+                message: "A verified Codeforces account is required"
+            });
+        }
+
+        const { contestId, problemIndex } = req.body;
+
+        if (!contestId || !problemIndex) {
+            return res.status(400).json({
+                message: "Contest ID and problem index are required"
             });
         }
 
         const submissions = await getSubmissionsForBattle({
-            handle,
+            handle: user.codeforcesHandle,
             contestId: Number(contestId),
             problemIndex,
-            battleStartTime,
-            battleEndTime,
+            battleStartTime: battle.startTime,
+            battleEndTime: battle.endTime,
             lastCheckedSubmissionId:
                 Number(lastCheckedSubmissionId) || 0
         });
 
-        return res.status(200).json({
-            submissions
-        });
-
+        return res.status(200).json({ submissions });
     } catch (error) {
         console.error(
             "Codeforces submission check error:",
@@ -523,29 +570,136 @@ const getBattleResult = async (req, res) => {
             });
         }
 
+        // Verify that the requesting user participated.
+        const participant = await BattleParticipant.findOne({
+            where: {
+                battleId: battle.id,
+                userId: req.user.id
+            }
+        });
+
+        if (!participant) {
+            return res.status(403).json({
+                message: "You are not a participant of this battle"
+            });
+        }
+
+        // Fetch participants with their user information.
         const participants = await BattleParticipant.findAll({
             where: {
                 battleId: battle.id
             },
+            include: [
+                {
+                    model: User,
+                    as: "user",
+                    attributes: ["id", "username", "codeforcesHandle"]
+                }
+            ],
             order: [["rank", "ASC"]]
         });
 
-        if(!participant) {
-            return res.status(403).json({
-                message: "You are not a participant of this battle"
-            });
-        };
+        // Fetch all assigned problems.
+        const battleProblems = await BattleProblem.findAll({
+            where: {
+                battleId: battle.id
+            },
+            include: [
+                {
+                    model: Problem,
+                    as: "problem"
+                }
+            ],
+            order: [["problemOrder", "ASC"]]
+        });
 
-        return res.status(200).json({
-            battleId: battle.id,
-            status: battle.status,
-            winnerId: battle.winnerId,
-            participants: participants.map(p => ({
+        // Fetch all submissions made during this battle.
+        const submissions = await BattleSubmission.findAll({
+            where: {
+                battleId: battle.id
+            },
+            order: [["submittedAt", "ASC"]]
+        });
+
+        // Build participant results.
+        const playerResults = participants.map((p) => {
+            const playerSubmissions = submissions.filter(
+                (s) => Number(s.userId) === Number(p.userId)
+            );
+
+            const problemResults = battleProblems.map((bp) => {
+                const problem = bp.problem;
+
+                const problemSubmissions = playerSubmissions.filter(
+                    (s) => Number(s.problemId) === Number(problem.id)
+                );
+
+                const acceptedSubmission = problemSubmissions.find(
+                    (s) => s.verdict === "OK"
+                );
+
+                const latestSubmission =
+                    problemSubmissions[problemSubmissions.length - 1];
+
+                return {
+                    problemId: problem.id,
+                    problemOrder: bp.problemOrder,
+                    status: acceptedSubmission
+                        ? "Accepted"
+                        : latestSubmission
+                            ? latestSubmission.verdict
+                            : "Not attempted",
+                    accepted: Boolean(acceptedSubmission),
+                    solveTime: acceptedSubmission
+                        ? acceptedSubmission.submittedAt
+                        : null,
+                    penalty: problemSubmissions.reduce(
+                        (total, s) => total + Number(s.penalty || 0),
+                        0
+                    )
+                };
+            });
+
+            return {
                 userId: p.userId,
+                username:
+                    p.user?.username ||
+                    p.user?.codeforcesHandle ||
+                    `Player ${p.userId}`,
+                codeforcesHandle: p.user?.codeforcesHandle || null,
+
                 acceptedCount: p.acceptedCount,
                 totalPenalty: p.totalPenalty,
                 rank: p.rank,
-                result: p.result
+                result: p.result,
+
+                oldRating: p.oldRating,
+                ratingChange: p.ratingChange,
+                newRating: p.newRating,
+
+                problemResults
+            };
+        });
+
+        // Return the complete result.
+        return res.status(200).json({
+            battleId: battle.id,
+            status: battle.status,
+            battleRating: battle.battleRating,
+            problemCount: battle.problemCount,
+            winnerId: battle.winnerId,
+
+            outcome: battle.winnerId === null ? "TIE" : "COMPLETED",
+
+            participants: playerResults,
+
+            problems: battleProblems.map((bp) => ({
+                id: bp.problem.id,
+                problemId: bp.problem.id,
+                problemOrder: bp.problemOrder,
+                name: bp.problem.name,
+                rating: bp.problem.rating,
+                url: bp.problem.url
             }))
         });
 
@@ -553,7 +707,8 @@ const getBattleResult = async (req, res) => {
         console.error("Get battle result error:", error);
 
         return res.status(500).json({
-            message: "Internal Server Error"
+            message: "Internal Server Error",
+            error: error.message
         });
     }
 };
@@ -594,6 +749,103 @@ const getMyBattleHistory = async (req, res) => {
     }
 };
 
+const discardBattle = async (req, res) => {
+    try {
+        const { battleId } = req.params;
+
+        const battle = await Battle.findByPk(battleId);
+
+        if (!battle) {
+            return res.status(404).json({
+                message: "Battle not found"
+            });
+        }
+
+        if (battle.hostId !== req.user.id) {
+            return res.status(403).json({
+                message: "Only the host can discard this room"
+            });
+        }
+
+        if (battle.status !== "WAITING") {
+            return res.status(400).json({
+                message: "Only a waiting room can be discarded"
+            });
+        }
+
+        // Remove participants first to avoid foreign-key conflicts.
+        await BattleParticipant.destroy({
+            where: { battleId: battle.id }
+        });
+
+        await BattleProblem.destroy({
+            where: { battleId: battle.id }
+        });
+
+        await battle.destroy();
+
+        return res.status(200).json({
+            message: "Battle room discarded successfully"
+        });
+    } catch (error) {
+        console.error("Discard battle error:", error);
+
+        return res.status(500).json({
+            message: "Failed to discard battle room"
+        });
+    }
+};
+
+
+const getMyActiveBattle = async (req, res) => {
+    try {
+        const participation = await BattleParticipant.findOne({
+            where: {
+                userId: req.user.id,
+            },
+            include: {
+                model: Battle,
+                as: "battle",
+                required: true,
+                where: {
+                    status: {
+                        [Op.in]: ["WAITING", "COUNTDOWN", "RUNNING"],
+                    },
+                },
+            },
+            order: [["createdAt", "DESC"]],
+        });
+
+        if (!participation || !participation.battle) {
+            return res.status(200).json({ battle: null });
+        }
+
+        const battle = participation.battle;
+
+        return res.status(200).json({
+            battle: {
+                id: battle.id,
+                roomCode: battle.roomCode,
+                status: battle.status,
+                battleRating: battle.battleRating,
+                problemCount: battle.problemCount,
+                topicPreferences: battle.topicPreferences,
+                maxDuration: battle.maxDuration,
+                currentProblemOrder: battle.currentProblemOrder,
+                countdownEndAt: battle.countdownEndAt,
+                isHost: Number(battle.hostId) === Number(req.user.id),
+            },
+        });
+    } catch (error) {
+        console.error("Get active battle error:", error);
+
+        return res.status(500).json({
+            message: "Failed to fetch active battle",
+        });
+    }
+};
+
+
 module.exports = {
     createBattle,
     joinBattle,
@@ -604,5 +856,7 @@ module.exports = {
     getCurrentProblem,
     testCodeforcesSubmissions,
     getBattleResult,
-    getMyBattleHistory
+    getMyBattleHistory,
+    discardBattle,
+    getMyActiveBattle
 };

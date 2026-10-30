@@ -1,3 +1,4 @@
+
 const BattleSubmission = require("../models/BattleSubmission");
 const BattleProblem = require("../models/BattleProblem");
 const Problem = require("../models/Problem");
@@ -7,10 +8,13 @@ const { calculateBattleResult } = require("./battleResultService");
 
 const PENALTY_MINUTES = 10;
 
-const processBattleParticipantSubmissions = async (battle,participant,codeforcesHandle ) => {
-    
-    if(battle.status !== "RUNNING") return;
-    
+const processBattleParticipantSubmissions = async (
+    battle,
+    participant,
+    codeforcesHandle
+) => {
+    if (battle.status !== "RUNNING") return;
+
     const battleProblem = await BattleProblem.findOne({
         where: {
             battleId: battle.id,
@@ -43,35 +47,73 @@ const processBattleParticipantSubmissions = async (battle,participant,codeforces
         problemIndex: problem.problemIndex,
         battleStartTime: battle.startTime,
         battleEndTime: battle.endTime,
-        lastCheckedSubmissionId:
-            Number(participant.lastCheckedSubmissionId) || 0
+        lastCheckedSubmissionId: 0
     });
 
     submissions.sort((a, b) => a.id - b.id);
 
-    for (const submission of submissions) {
+    console.log("Processing submissions:", {
+        battleId: battle.id,
+        userId: participant.userId,
+        problem: problem.name,
+        count: submissions.length
+    });
 
-        const exists = await BattleSubmission.findOne({
+    for (const submission of submissions) {
+        const existing = await BattleSubmission.findOne({
             where: {
                 codeforcesSubmissionId: submission.id
             }
         });
 
-        if (exists) continue;
+        // Already processed this submission.
+        if (existing) {
+            // If the submission was previously TESTING and is now accepted,
+            // update its verdict and process the acceptance.
+            if (
+                existing.verdict !== "OK" &&
+                submission.verdict === "OK" &&
+                Number(existing.userId) === Number(participant.userId) &&
+                Number(existing.battleId) === Number(battle.id)
+            ) {
+                existing.verdict = "OK";
+                existing.submittedAt = new Date(
+                    submission.creationTimeSeconds * 1000
+                );
+                await existing.save();
+
+                await handleAcceptedSubmission(
+                    battle,
+                    participant,
+                    problem,
+                    existing
+                );
+
+                return;
+            }
+
+            continue;
+        }
+
+        const verdict = submission.verdict;
+
+        // Do not permanently record pending submissions as failed.
+        if (
+            !verdict ||
+            verdict === "TESTING" ||
+            verdict === "SUBMITTED"
+        ) {
+            continue;
+        }
 
         const submittedAt = new Date(
             submission.creationTimeSeconds * 1000
         );
 
-        const verdict = submission.verdict;
+        const penalty =
+            verdict === "OK" ? 0 : PENALTY_MINUTES;
 
-        let penalty = 0;
-
-        if (verdict !== "OK") {
-            penalty = PENALTY_MINUTES;
-        }
-
-        await BattleSubmission.create({
+        const record = await BattleSubmission.create({
             battleId: battle.id,
             userId: participant.userId,
             problemId: problem.id,
@@ -81,40 +123,79 @@ const processBattleParticipantSubmissions = async (battle,participant,codeforces
             penalty
         });
 
-        participant.lastCheckedSubmissionId = submission.id;
-        participant.lastCheckedSubmissionTime =
-            submission.creationTimeSeconds;
+        if (verdict === "OK") {
+            await handleAcceptedSubmission(
+                battle,
+                participant,
+                problem,
+                record
+            );
 
-        if (verdict !== "OK") {
-            participant.totalPenalty += PENALTY_MINUTES;
-            await participant.save();
-            continue;
-        }
-
-        const elapsedMinutes = Math.floor(
-            (submittedAt - new Date(battle.startTime)) / 60000
-        );
-
-        participant.acceptedCount++;
-        participant.totalPenalty += elapsedMinutes;
-
-        await participant.save();
-
-        const nextOrder = battle.currentProblemOrder + 1;
-
-        if (nextOrder > battle.problemCount) {
-            battle.status = "FINISHED";
-            await battle.save();
-
-            await calculateBattleResult(battle.id);
             return;
         }
 
-        battle.currentProblemOrder = nextOrder;
-        await battle.save();
+        participant.totalPenalty =
+            Number(participant.totalPenalty) + PENALTY_MINUTES;
 
+        await participant.save();
+    }
+};
+
+const handleAcceptedSubmission = async (
+    battle,
+    participant,
+    problem,
+    submission
+) => {
+    // Prevent duplicate acceptance processing.
+    const alreadyAccepted = await BattleSubmission.findOne({
+        where: {
+            battleId: battle.id,
+            userId: participant.userId,
+            problemId: problem.id,
+            verdict: "OK"
+        }
+    });
+
+    // The current submission is already saved as OK.
+    // Count accepted submissions only once.
+    if (Number(participant.acceptedCount) >= battle.currentProblemOrder) {
         return;
     }
+
+    const elapsedMinutes = Math.max(
+        0,
+        Math.floor(
+            (new Date(submission.submittedAt) -
+                new Date(battle.startTime)) / 60000
+        )
+    );
+
+    participant.acceptedCount =
+        Number(participant.acceptedCount) + 1;
+
+    participant.totalPenalty =
+        Number(participant.totalPenalty) + elapsedMinutes;
+
+    await participant.save();
+
+    const nextOrder = battle.currentProblemOrder + 1;
+
+    console.log("Problem accepted:", {
+        userId: participant.userId,
+        problem: problem.name,
+        nextOrder
+    });
+
+    if (nextOrder > battle.problemCount) {
+        await calculateBattleResult(battle.id);
+        return;
+    }
+
+    battle.currentProblemOrder = nextOrder;
+    await battle.save();
+
+    console.log("Advanced to problem:", nextOrder);
 };
 
 module.exports = {

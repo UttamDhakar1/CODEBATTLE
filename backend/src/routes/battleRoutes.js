@@ -1,18 +1,47 @@
+
 const express = require("express");
 const router = express.Router();
 
 const authenticate = require("../middleware/authMiddleware");
-const { createBattle, joinBattle, startBattle, getBattle, syncProblems, assignBattleProblems, getCurrentProblem, testCodeforcesSubmissions, getBattleResult, getMyBattleHistory } = require("../controllers/battleController");
+const requireCodeforcesVerified = require("../middleware/requireCodeforcesVerified");
 
-router.post("/create", authenticate, createBattle);
-router.post("/join", authenticate, joinBattle);
-router.post("/:battleId/start", authenticate, startBattle);
-router.post("/sync-problems", authenticate, syncProblems);
-router.post("/:battleId/assign-problems", authenticate, assignBattleProblems);
-router.post("/test-codeforces-submissions", authenticate, testCodeforcesSubmissions);
-router.get("/history", authenticate, getMyBattleHistory);
-router.get("./:battleId/result", authenticate, getBattleResult);
-router.get("/:battleId/current-problem", authenticate, getCurrentProblem);
-router.get("/:battleId", authenticate, getBattle);
+const {
+    createBattle,
+    joinBattle,
+    startBattle,
+    getBattle,
+    syncProblems,
+    assignBattleProblems,
+    getCurrentProblem,
+    testCodeforcesSubmissions,
+    getBattleResult,
+    getMyBattleHistory,
+    discardBattle,
+    getMyActiveBattle
+} = require("../controllers/battleController");
 
+// All routes below require authentication and Codeforces verification.
+router.use(authenticate);
+router.use(requireCodeforcesVerified);
+
+// Create and join battles.
+router.post("/", createBattle);
+router.post("/join", joinBattle);
+
+// Active battle and history.
+router.get("/active", getMyActiveBattle);
+router.get("/history", getMyBattleHistory);
+
+// Synchronize problems.
+router.post("/sync-problems", syncProblems);
+
+// Battle-specific actions.
+router.post("/:battleId/start", startBattle);
+router.post("/:battleId/assign-problems", assignBattleProblems);
+router.post("/test-codeforces-submissions", testCodeforcesSubmissions);
+
+router.get("/:battleId/result", getBattleResult);
+router.get("/:battleId/current-problem", getCurrentProblem);
+router.delete("/:battleId", discardBattle);
+router.get("/:battleId", getBattle);
 module.exports = router;

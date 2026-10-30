@@ -4,11 +4,7 @@ const CODEFORCES_API = "https://codeforces.com/api/user.status";
 
 const getUserSubmissions = async (handle, from = 1, count = 100) => {
     const response = await axios.get(CODEFORCES_API, {
-        params: {
-            handle,
-            from,
-            count
-        }
+        params: { handle, from, count }
     });
 
     if (response.data.status !== "OK") {
@@ -36,20 +32,21 @@ const getSubmissionsForBattle = async ({
         new Date(battleEndTime).getTime() / 1000
     );
 
-    return submissions.filter(submission => {
-        if (submission.id <= lastCheckedSubmissionId) {
+    const filtered = submissions.filter((submission) => {
+        if (Number(submission.id) <= Number(lastCheckedSubmissionId)) {
             return false;
         }
 
-        if (!submission.problem) {
+        if (!submission.problem) return false;
+
+        if (Number(submission.problem.contestId) !== Number(contestId)) {
             return false;
         }
 
-        if (submission.problem.contestId !== contestId) {
-            return false;
-        }
-
-        if (submission.problem.index !== problemIndex) {
+        if (
+            String(submission.problem.index).toUpperCase() !==
+            String(problemIndex).toUpperCase()
+        ) {
             return false;
         }
 
@@ -63,6 +60,17 @@ const getSubmissionsForBattle = async ({
 
         return true;
     });
+
+    console.log("Codeforces submission check:", {
+        handle,
+        contestId,
+        problemIndex,
+        totalSubmissions: submissions.length,
+        matchedSubmissions: filtered.length,
+        lastCheckedSubmissionId
+    });
+
+    return filtered;
 };
 
 module.exports = {

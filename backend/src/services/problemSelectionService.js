@@ -1,62 +1,69 @@
+
 const { Op } = require("sequelize");
 const Problem = require("../models/Problem");
 
-const selectProblemsForBattle = async ( battleRating, problemCount, topicPreference ) => {
+const selectProblemsForBattle = async (
+    battleRating,
+    problemCount,
+    topicPreference
+) => {
     const minRating = Math.max(800, battleRating - 200);
     const maxRating = Math.min(3500, battleRating + 300);
 
-    const where = {
-        rating: {
-            [Op.between]: [minRating, maxRating]
-        }
-    };
+    const problems = await Problem.findAll({
+        where: {
+            rating: {
+                [Op.between]: [minRating, maxRating],
+            },
+        },
+    });
 
-    const problems = await Problem.findAll({ where });
-
-    if(problems.length < problemCount) {
+    if (problems.length < problemCount) {
         throw new Error(
-            "Not enough problems available for this rating range"
+            `Not enough problems available: found ${problems.length}, ` +
+            `but ${problemCount} are required for rating range ` +
+            `${minRating}-${maxRating}.`
         );
     }
 
-    let preferredProblems = [];
-    let fallbackProblems = [];
+    const shuffled = [...problems].sort(() => Math.random() - 0.5);
 
-    if(topicPreference !== null 
-        && topicPreference !== undefined 
-        && topicPreference.length > 0
-    ){
-        for (const problem of problems) {
-            const topic = problem.topic || [];
-
-            const hasPreferredTopic = topicPreference.some(topic => topic.includes(topic))
-            if(hasPreferredTopic) {
-                preferredProblems.push(problem);
-            }
-            else fallbackProblems.push(problem);
-
-            if(preferredProblems.length === problemCount) break;
-        };
-        
+    if (
+        !Array.isArray(topicPreference) ||
+        topicPreference.length === 0
+    ) {
+        return shuffled.slice(0, problemCount);
     }
-    else{
-        fallbackProblems = [...problems];
-    }
-    preferredProblems.sort(() => Math.random() - 0.5);
-    fallbackProblems.sort(() => Math.random() - 0.5);
 
-    const selectProblems = [];
+    const preferredProblems = [];
+    const otherProblems = [];
 
-    for(const problem of preferredProblems){
-        selectProblems.push(problem);
+    for (const problem of shuffled) {
+        // Supports either field name until the model is confirmed.
+        const rawTopics = problem.topics ?? problem.topic ?? [];
+
+        const problemTopics = (
+            Array.isArray(rawTopics) ? rawTopics : []
+        ).map(topic => String(topic).toLowerCase());
+
+        const matchesTopic = topicPreference.some(preferredTopic =>
+            problemTopics.includes(String(preferredTopic).toLowerCase())
+        );
+
+        if (matchesTopic) {
+            preferredProblems.push(problem);
+        } else {
+            otherProblems.push(problem);
+        }
     }
-    for(const problem of fallbackProblems){
-        if(selectProblems.length === problemCount) break;
-        selectProblems.push(problem);
-    }
-    return selectProblems;
-}
+
+    // Prefer matching topics, but use other eligible problems if needed.
+    return [
+        ...preferredProblems,
+        ...otherProblems,
+    ].slice(0, problemCount);
+};
 
 module.exports = {
-    selectProblemsForBattle
+    selectProblemsForBattle,
 };

@@ -32,9 +32,6 @@ const checkRunningBattles = async () => {
         for (const battle of battles) {
             const now = new Date();
             if (battle.endTime && now >= battle.endTime) {
-                battle.status = "FINISHED";
-                await battle.save();
-
                 await calculateBattleResult(battle.id);
                 continue;
             }

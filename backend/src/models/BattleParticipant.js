@@ -21,8 +21,8 @@ const BattleParticipant = sequelize.define("BattleParticipant", {
         type: DataTypes.INTEGER,
         allowNull: false,
         reference: {
-            model: "users",
-            kwy: "id"
+            model: "Users",
+            key: "id"
         }
     },
 
